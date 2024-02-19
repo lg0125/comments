@@ -22,7 +22,8 @@ public class UserController {
     @PostMapping("code")
     public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
         // 发送短信验证码并保存验证码
-        return userService.sendCodeV1(phone, session); // session方式
+        // return userService.sendCodeV1(phone, session); // session方式
+        return userService.sendCodeV2(phone, session); // redis方式
     }
 
     /**
@@ -33,6 +34,7 @@ public class UserController {
     public Result login(@RequestBody LoginFormDTO loginForm, HttpSession session){
         // 实现登录功能
         // return userService.loginV1(loginForm, session); // session 方式
-        return userService.loginV2(loginForm, session);
+        // return userService.loginV2(loginForm, session); // session 方式
+        return userService.loginV3(loginForm, session);
     }
 }
