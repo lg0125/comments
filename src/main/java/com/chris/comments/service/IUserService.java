@@ -11,4 +11,6 @@ public interface IUserService extends IService<User> {
     Result sendCodeV1(String phone, HttpSession session);
 
     Result loginV1(LoginFormDTO loginForm, HttpSession session);
+
+    Result loginV2(LoginFormDTO loginForm, HttpSession session);
 }

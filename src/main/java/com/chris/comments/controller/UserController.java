@@ -32,6 +32,7 @@ public class UserController {
     @PostMapping("/login")
     public Result login(@RequestBody LoginFormDTO loginForm, HttpSession session){
         // 实现登录功能
-        return userService.loginV1(loginForm, session); // session 方式
+        // return userService.loginV1(loginForm, session); // session 方式
+        return userService.loginV2(loginForm, session);
     }
 }
