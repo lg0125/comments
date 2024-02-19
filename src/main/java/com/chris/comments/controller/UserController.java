@@ -2,7 +2,11 @@ package com.chris.comments.controller;
 
 import com.chris.comments.dto.LoginFormDTO;
 import com.chris.comments.dto.Result;
+import com.chris.comments.dto.UserDTO;
+import com.chris.comments.entity.User;
 import com.chris.comments.service.IUserService;
+import com.chris.comments.utils.interceptor.UserHolderV1;
+import com.chris.comments.utils.interceptor.UserHolderV2;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,8 +37,14 @@ public class UserController {
     @PostMapping("/login")
     public Result login(@RequestBody LoginFormDTO loginForm, HttpSession session){
         // 实现登录功能
-        // return userService.loginV1(loginForm, session); // session 方式
-        // return userService.loginV2(loginForm, session); // session 方式
-        return userService.loginV3(loginForm, session);
+        // return userService.loginV1(loginForm, session); // session方式
+        // return userService.loginV2(loginForm, session); // session方式
+        return userService.loginV3(loginForm, session); // redis方式
+    }
+
+    @GetMapping("/me")
+    public Result me() {
+        UserDTO user = UserHolderV2.getUser();
+        return Result.ok(user);
     }
 }

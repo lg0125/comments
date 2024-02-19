@@ -1,7 +1,7 @@
 package com.chris.comments.config;
 
-import com.chris.comments.utils.interceptor.LoginInterceptorV3;
-import lombok.NonNull;
+import com.chris.comments.utils.interceptor.LoginInterceptor;
+import com.chris.comments.utils.interceptor.RefreshTokenInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -15,16 +15,21 @@ public class MvcConfig implements WebMvcConfigurer {
     private StringRedisTemplate stringRedisTemplate;
 
     @Override
-    public void addInterceptors(@NonNull  InterceptorRegistry registry) {
+    public void addInterceptors(InterceptorRegistry registry) {
         // 登录拦截器
-        registry.addInterceptor(new LoginInterceptorV3(stringRedisTemplate)).excludePathPatterns(
-                "/shop/**",
-                "/voucher/**",
-                "/shop-type/**",
-                "/upload/**",
-                "/blog/hot",
-                "/user/code",
-                "/user/login"
-        );
+        registry.addInterceptor(new LoginInterceptor())
+                .excludePathPatterns(
+                    "/shop/**",
+                    "/voucher/**",
+                    "/shop-type/**",
+                    "/upload/**",
+                    "/blog/hot",
+                    "/user/code",
+                    "/user/login"
+                ).order(1);
+        // token刷新的拦截器
+        registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
+                .addPathPatterns("/**")
+                .order(0);
     }
 }
