@@ -1,12 +1,10 @@
 package com.chris.comments.controller;
 
+import com.chris.comments.dto.LoginFormDTO;
 import com.chris.comments.dto.Result;
 import com.chris.comments.service.IUserService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
@@ -27,4 +25,13 @@ public class UserController {
         return userService.sendCodeV1(phone, session); // session方式
     }
 
+    /**
+     * 登录功能
+     * @param loginForm 登录参数，包含手机号、验证码；或者手机号、密码
+     */
+    @PostMapping("/login")
+    public Result login(@RequestBody LoginFormDTO loginForm, HttpSession session){
+        // 实现登录功能
+        return userService.loginV1(loginForm, session); // session 方式
+    }
 }
