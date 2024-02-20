@@ -80,4 +80,109 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         // 7.返回订单id
         return Result.ok(orderId);
     }
+
+    private Result seckillVoucherV2(Long voucherId) {
+        // 乐观锁解决超卖 CAS
+
+        // 1.查询优惠券
+        SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
+
+        // 2.判断秒杀是否开始
+        if (voucher.getBeginTime().isAfter(LocalDateTime.now())) {
+            // 尚未开始
+            return Result.fail("秒杀尚未开始！");
+        }
+
+        // 3.判断秒杀是否已经结束
+        if (voucher.getEndTime().isBefore(LocalDateTime.now())) {
+            // 尚未开始
+            return Result.fail("秒杀已经结束！");
+        }
+
+        // 4.判断库存是否充足
+        if (voucher.getStock() < 1) {
+            // 库存不足
+            return Result.fail("库存不足！");
+        }
+
+        // 5.扣减库存
+        boolean isSuccess = seckillVoucherService.update()
+                .setSql("stock = stock - 1") // set stock = stock - 1
+                .eq("voucher_id", voucherId)
+                .eq("stock", voucher.getStock()) // where id = ? and stock = ?
+                .update();
+        if (!isSuccess) {
+            // 扣减失败
+            return Result.fail("库存不足！");
+        }
+
+        // 6.创建订单
+        VoucherOrder voucherOrder = new VoucherOrder();
+        // 6.1.订单id
+        long orderId = redisIdWorker.nextId("order");
+        voucherOrder.setId(orderId);
+        // 6.2.用户id
+        Long userId = UserHolderV2.getUser().getId();
+        voucherOrder.setUserId(userId);
+        // 6.3.代金券id
+        voucherOrder.setVoucherId(voucherId);
+        // 6.4 写入DB
+        save(voucherOrder);
+
+        // 7.返回订单id
+        return Result.ok(orderId);
+    }
+
+    private Result seckillVoucherV3(Long voucherId) {
+        // 乐观锁解决超卖 CAS
+        // 改进 提高成功率
+
+        // 1.查询优惠券
+        SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
+
+        // 2.判断秒杀是否开始
+        if (voucher.getBeginTime().isAfter(LocalDateTime.now())) {
+            // 尚未开始
+            return Result.fail("秒杀尚未开始！");
+        }
+
+        // 3.判断秒杀是否已经结束
+        if (voucher.getEndTime().isBefore(LocalDateTime.now())) {
+            // 尚未开始
+            return Result.fail("秒杀已经结束！");
+        }
+
+        // 4.判断库存是否充足
+        if (voucher.getStock() < 1) {
+            // 库存不足
+            return Result.fail("库存不足！");
+        }
+
+        // 5.扣减库存
+        boolean isSuccess = seckillVoucherService.update()
+                .setSql("stock = stock - 1") // set stock = stock - 1
+                .eq("voucher_id", voucherId)
+                .gt("stock", 0) // where id = ? and stock > 0
+                .update();
+        if (!isSuccess) {
+            // 扣减失败
+            return Result.fail("库存不足！");
+        }
+
+        // 6.创建订单
+        VoucherOrder voucherOrder = new VoucherOrder();
+        // 6.1.订单id
+        long orderId = redisIdWorker.nextId("order");
+        voucherOrder.setId(orderId);
+        // 6.2.用户id
+        Long userId = UserHolderV2.getUser().getId();
+        voucherOrder.setUserId(userId);
+        // 6.3.代金券id
+        voucherOrder.setVoucherId(voucherId);
+        // 6.4 写入DB
+        save(voucherOrder);
+
+        // 7.返回订单id
+        return Result.ok(orderId);
+    }
 }
