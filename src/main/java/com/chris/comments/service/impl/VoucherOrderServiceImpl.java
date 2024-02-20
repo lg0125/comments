@@ -1,5 +1,6 @@
 package com.chris.comments.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chris.comments.dto.Result;
 import com.chris.comments.entity.SeckillVoucher;
@@ -16,6 +17,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -23,8 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -46,19 +51,26 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedissonClient redissonClient;
 
-    private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+    private static final DefaultRedisScript<Long> SECKILL_SCRIPTS_V1;
     static {
-        SECKILL_SCRIPT = new DefaultRedisScript<>();
-        SECKILL_SCRIPT.setLocation(new ClassPathResource("lua/seckill.lua"));
-        SECKILL_SCRIPT.setResultType(Long.class);
+        SECKILL_SCRIPTS_V1 = new DefaultRedisScript<>();
+        SECKILL_SCRIPTS_V1.setLocation(new ClassPathResource("lua/seckillV1.lua"));
+        SECKILL_SCRIPTS_V1.setResultType(Long.class);
     }
 
-    private BlockingQueue<VoucherOrder> orderTasks = new ArrayBlockingQueue<>(1024 * 10024);
+    private static final DefaultRedisScript<Long> SECKILL_SCRIPTS_V2;
+    static {
+        SECKILL_SCRIPTS_V2 = new DefaultRedisScript<>();
+        SECKILL_SCRIPTS_V2.setLocation(new ClassPathResource("lua/seckillV2.lua"));
+        SECKILL_SCRIPTS_V2.setResultType(Long.class);
+    }
+
+    private BlockingQueue<VoucherOrder> orderTasks = new ArrayBlockingQueue<>(1024 * 1024);
 
 
-    private IVoucherOrderService proxyV10;
+    private IVoucherOrderService proxyV10V11;
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
-    private class VoucherOrderHandlerV1 implements Runnable{
+    private class VoucherOrderHandlerV1 implements Runnable {
         @Override
         public void run() {
             while (true) {
@@ -87,16 +99,97 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
         // 获取代理对象(事务)
         try {
-           proxyV10.createVoucherOrder(voucherOrder);
+           proxyV10V11.createVoucherOrder(voucherOrder);
         } finally {
             // 释放锁
             lock.unlock();
         }
     }
 
+
+    @SuppressWarnings("unchecked")
+    private class VoucherOrderHandlerV2 implements Runnable {
+        String queueName = "stream.orders";
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    // 1.获取消息队列中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS s1 >
+                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
+                            Consumer.from("g1", "c1"),
+                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                            StreamOffset.create(queueName, ReadOffset.lastConsumed())
+                    );
+
+                    // 2.判断订单信息是否为空
+                    if (list == null || list.isEmpty()) {
+                        // 如果为null，说明没有消息，继续下一次循环
+                        continue;
+                    }
+
+                    // 解析数据
+                    MapRecord<String, Object, Object> record    = list.get(0);
+                    Map<Object, Object> values                  = record.getValue();
+                    VoucherOrder voucherOrder                   = BeanUtil.fillBeanWithMap(
+                            values,
+                            new VoucherOrder(),
+                            true
+                    );
+
+                    // 3.创建订单
+                    handleVoucherOrder(voucherOrder);
+
+                    // 4.确认消息 XACK
+                    stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
+                } catch (Exception e) {
+                    log.error("处理订单异常", e);
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handlePendingList() {
+        String queueName = "stream.orders";
+
+        while (true) {
+            try {
+                // 1.获取pending-list中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 STREAMS stream.orders 0
+                List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
+                        Consumer.from("g1", "c1"),
+                        StreamReadOptions.empty().count(1),
+                        StreamOffset.create(queueName, ReadOffset.from("0"))
+                );
+
+                // 2.判断订单信息是否为空
+                if (list == null || list.isEmpty()) {
+                    // 如果为null，说明没有异常消息，结束循环
+                    break;
+                }
+
+                // 解析数据
+                MapRecord<String, Object, Object> record    = list.get(0);
+                Map<Object, Object> value                   = record.getValue();
+                VoucherOrder voucherOrder                   = BeanUtil.fillBeanWithMap(
+                        value,
+                        new VoucherOrder(),
+                        true
+                );
+
+                // 3.创建订单
+                handleVoucherOrder(voucherOrder);
+
+                // 4.确认消息 XACK
+                stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
+            } catch (Exception e) {
+                log.error("处理订单异常", e);
+            }
+        }
+    }
+
     @PostConstruct
     private void init() {
-        SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandlerV1());
+        SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandlerV2());
     }
 
     @Override
@@ -651,9 +744,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId     = UserHolderV2.getUser().getId();
         long orderId    = redisIdWorker.nextId("order");
         Long result     = stringRedisTemplate.execute(
-                SECKILL_SCRIPT,
+                SECKILL_SCRIPTS_V1,
                 Collections.emptyList(),
-                voucherId.toString(), userId.toString(), String.valueOf(orderId)
+                voucherId.toString(), userId.toString()
         );
 
         // 2.判断结果是否为0
@@ -674,7 +767,31 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         orderTasks.add(voucherOrder);
 
         // 3.获取代理对象
-        proxyV10 = (IVoucherOrderService) AopContext.currentProxy();
+        proxyV10V11 = (IVoucherOrderService) AopContext.currentProxy();
+
+        // 4.返回订单id
+        return Result.ok(orderId);
+    }
+
+    public Result seckillVoucherV11(Long voucherId) {
+        // 1.执行lua脚本
+        Long userId     = UserHolderV2.getUser().getId();
+        long orderId    = redisIdWorker.nextId("order");
+        Long result     = stringRedisTemplate.execute(
+                SECKILL_SCRIPTS_V2,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString(),String.valueOf(orderId)
+        );
+
+        // 2.判断结果是否为0
+        int r = result.intValue();
+        if (r != 0) {
+            // 2.1.不为0 ，代表没有购买资格
+            return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
+        }
+
+        // 3.获取代理对象
+        proxyV10V11 = (IVoucherOrderService) AopContext.currentProxy();
 
         // 4.返回订单id
         return Result.ok(orderId);
