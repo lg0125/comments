@@ -6,10 +6,8 @@ import com.chris.comments.entity.VoucherOrder;
 
 public interface IVoucherOrderService extends IService<VoucherOrder> {
     Result seckillVoucher(Long voucherId);
-
-    Result createVoucherOrderV6(Long voucherId);
-
+    
     Result createVoucherOrderV5(Long voucherId);
 
-    Result createVoucherOrderV7(Long voucherId);
+    Result createVoucherOrder(Long voucherId);
 }
