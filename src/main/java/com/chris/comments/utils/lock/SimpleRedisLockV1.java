@@ -5,10 +5,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.util.concurrent.TimeUnit;
 
-public class SimpleRedisLock implements ILock {
+public class SimpleRedisLockV1 implements ILock {
     private String name;
     private StringRedisTemplate stringRedisTemplate;
-    public SimpleRedisLock(String name, StringRedisTemplate stringRedisTemplate) {
+    public SimpleRedisLockV1(String name, StringRedisTemplate stringRedisTemplate) {
         this.name = name;
         this.stringRedisTemplate = stringRedisTemplate;
     }

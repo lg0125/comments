@@ -9,7 +9,7 @@ import com.chris.comments.service.ISeckillVoucherService;
 import com.chris.comments.service.IVoucherOrderService;
 import com.chris.comments.utils.id.RedisIdWorker;
 import com.chris.comments.utils.interceptor.UserHolderV2;
-import com.chris.comments.utils.lock.SimpleRedisLock;
+import com.chris.comments.utils.lock.SimpleRedisLockV1;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -423,7 +423,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = UserHolderV2.getUser().getId();
 
         // 获取锁对象
-        SimpleRedisLock lock = new SimpleRedisLock(
+        SimpleRedisLockV1 lock = new SimpleRedisLockV1(
                 "order:" + userId,
                 stringRedisTemplate
         );
