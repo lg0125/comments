@@ -10,4 +10,6 @@ public interface IVoucherOrderService extends IService<VoucherOrder> {
     Result createVoucherOrderV5(Long voucherId);
 
     Result createVoucherOrder(Long voucherId);
+
+    void createVoucherOrder(VoucherOrder voucherOrder);
 }
