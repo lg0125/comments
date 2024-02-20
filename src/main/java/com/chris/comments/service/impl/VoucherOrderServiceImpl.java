@@ -15,12 +15,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
@@ -37,14 +42,24 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedissonClient redissonClient;
 
+    private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+    static {
+        SECKILL_SCRIPT = new DefaultRedisScript<>();
+        SECKILL_SCRIPT.setLocation(new ClassPathResource("lua/seckill.lua"));
+        SECKILL_SCRIPT.setResultType(Long.class);
+    }
+
+    private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
+
     @Override
-    @Transactional
     public Result seckillVoucher(Long voucherId) {
         return seckillVoucherV1(voucherId);
     }
 
 
     public Result seckillVoucherV1(Long voucherId) {
+        // @Transactional
+
         // 1.查询优惠券
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
 
@@ -94,6 +109,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     public Result seckillVoucherV2(Long voucherId) {
+        // @Transactional
         // 乐观锁解决超卖 CAS
 
         // 1.查询优惠券
@@ -146,6 +162,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     public Result seckillVoucherV3(Long voucherId) {
+        // @Transactional
         // 乐观锁解决超卖 CAS
         // 改进 提高成功率
 
@@ -199,6 +216,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     public Result seckillVoucherV4(Long voucherId) {
+        // @Transactional
         // 简易版一人一单
         // 存在线程安全问题
 
@@ -545,6 +563,27 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         save(voucherOrder);
 
         // 8.返回订单id
+        return Result.ok(orderId);
+    }
+
+    public Result seckillVoucherV10(Long voucherId) {
+        // 1.执行lua脚本
+        Long userId     = UserHolderV2.getUser().getId();
+        long orderId    = redisIdWorker.nextId("order");
+        Long result     = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString(), String.valueOf(orderId)
+        );
+
+        // 2.判断结果是否为0
+        int r = result.intValue();
+        if (r != 0) {
+            // 2.1.不为0 ，代表没有购买资格
+            return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
+        }
+
+        // 3.返回订单id
         return Result.ok(orderId);
     }
 }
