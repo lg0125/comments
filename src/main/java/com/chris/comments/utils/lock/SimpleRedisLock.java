@@ -14,13 +14,13 @@ public class SimpleRedisLock implements ILock {
     }
 
     private static final String KEY_PREFIX = "lock:";
-    private static final String ID_PREFIX = UUID.randomUUID().toString(true) + "-";
+    private static final String ID_PREFIX = UUID.randomUUID().toString(true) + "-"; // 解决Redis分布式锁的误删问题
 
 
 
     @Override
     public boolean tryLock(long timeoutSec) {
-        // 获取线程标示
+        // 获取线程标识
         String threadId = ID_PREFIX + Thread.currentThread().getId();
 
         // 获取锁
@@ -34,14 +34,14 @@ public class SimpleRedisLock implements ILock {
 
     @Override
     public void unlock() {
-        // 获取线程标示
+        // 获取线程标识 解决Redis分布式锁的误删问题
         String threadId = ID_PREFIX + Thread.currentThread().getId();
-        
-        // 获取锁中的标示
+
+        // 获取锁中的线程标识 解决Redis分布式锁的误删问题
         String id       = stringRedisTemplate.opsForValue().get(KEY_PREFIX + name);
 
-        // 判断标示是否一致
-        if(threadId.equals(id)) {
+        // 判断标识是否一致
+        if(threadId.equals(id)) { // 解决Redis分布式锁的误删问题
             // 释放锁
             stringRedisTemplate.delete(KEY_PREFIX + name);
         }
